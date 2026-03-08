@@ -15,7 +15,7 @@ def add_cors(response):
 def options_handler(p):
     return make_response('', 204)
 
-OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY', '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')
+OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY', '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')
 OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 
 MODELS = [
