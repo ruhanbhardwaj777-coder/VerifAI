@@ -301,7 +301,7 @@ def get_stats():
         return jsonify({'total_claims': total, 'verdicts': {r['verdict']: r['c'] for r in verdicts}})
     finally:
         conn.close()
-
+        
 if __name__ == '__main__':
     print('\n' + '='*50)
     print('  VerifAI — Multilingual Fact Checker')
@@ -310,4 +310,5 @@ if __name__ == '__main__':
     print('  DB ready | Models:', len(MODELS), 'with fallback')
     print('  Open: http://localhost:5050')
     print('='*50 + '\n')
-    app.run(debug=False, port=5050)
+    port = int(os.environ.get('PORT', 5050))
+    app.run(debug=False, host='0.0.0.0', port=port)
