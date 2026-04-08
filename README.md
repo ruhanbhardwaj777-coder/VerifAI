@@ -1,4 +1,4 @@
-# Fact Checker AI
+# Fact Checker AI(VerifAI)
 
 An AI-powered full-stack fact-checking web app and Progressive Web App (PWA).
 
