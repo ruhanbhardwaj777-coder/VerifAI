@@ -15,126 +15,84 @@ def add_cors(response):
 def options_handler(p):
     return make_response('', 204)
 
-OPENROUTER_API_KEY = os.environ.get('OPENROUTER_API_KEY', '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')
-OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
-
-MODELS = [
-    'meta-llama/llama-3.3-70b-instruct:free',
-    'google/gemma-3-27b-it:free',
-    'google/gemma-3-12b-it:free',
-    'mistralai/mistral-7b-instruct:free',
-    'deepseek/deepseek-r1-distill-llama-70b:free',
-    'qwen/qwen-2.5-72b-instruct:free',
-]
+ANTHROPIC_API_KEY = os.environ.get('ANTHROPIC_API_KEY', 'sk-aHlx5c6BlrcPAJ2s94K2bDTY4s3e4p3DsyKHgJid1eWqJHeO')
+ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages'
+ANTHROPIC_MODEL = 'claude-haiku-4-5-20251001'
 
 def call_ai(claim, lang='en'):
-    lang_map = {
-        'hi': 'Hindi (Devanagari script only — write exactly as a native Hindi speaker would, natural and conversational)',
-        'en': 'English',
-    }
-    lang_name = lang_map.get(lang, 'English')
+    lang_name = 'Hindi (Devanagari script, natural conversational Hindi)' if lang == 'hi' else 'English'
 
     prompt = f'''You are a senior fact-checker at a top investigative newsroom. You are rigorous, precise, and never guess.
 
-LANGUAGE RULE (NON-NEGOTIABLE): Write the "explanation" field in {lang_name}. Do not use any other language for explanation regardless of how the claim is phrased. Keep "verdict", "category", "sources", "related_queries" in English always.
+LANGUAGE RULE (NON-NEGOTIABLE): Write the "explanation" field in {lang_name}. Keep "verdict", "category", "sources", "related_queries" in English always.
 
 CLAIM TO ANALYZE:
 "{claim}"
 
-STEP 1 — Think through this before answering:
-- What is the core factual assertion being made?
-- What does the scientific/historical consensus say?
-- Are there nuances, context, or partial truths?
-- How confident can you be given available evidence?
-
-STEP 2 — Reply with ONLY this JSON (no markdown, no backticks, no extra text):
-{{"verdict":"<see rules below>","explanation":"<3-4 sentences in {lang_name} — start with the direct answer, then give specific evidence, name actual studies or sources, end with important context if any>","confidence":<see confidence guide below>,"category":"<science|history|politics|health|technology|religion|general>","sources":["<1-3 real, specific source names — e.g. WHO 2023 report, NASA, Nature journal, not vague like 'experts say'>"],"related_queries":["<3 specific English search queries a fact-checker would use to verify this>"]}}
+Reply with ONLY this JSON (no markdown, no backticks, no extra text):
+{{"verdict":"<true|false|misleading|insufficient evidence|unverifiable>","explanation":"<3-4 sentences in {lang_name} — direct answer first, then specific evidence with real numbers/dates/org names>","confidence":<integer 0-100>,"category":"<science|history|politics|health|technology|religion|general>","sources":["<1-3 real specific source names>"],"related_queries":["<3 English search queries to verify this>"]}}
 
 VERDICT RULES:
-- "true" — Strongly supported by scientific consensus, verified historical record, or authoritative sources. Example: "The Earth orbits the Sun"
-- "false" — Directly contradicted by established evidence. A clear myth or misinformation. Example: "Vaccines cause autism"
-- "misleading" — Contains a grain of truth but is missing critical context, cherry-picks data, or leads to a false conclusion. Example: "Napoleon was very short" (average for his era, myth from propaganda)
-- "insufficient evidence" — Claim may be plausible but lacks peer-reviewed or authoritative backing. Cannot be confirmed or denied reliably.
-- "unverifiable" — Subjective opinion, future prediction, or not a falsifiable factual claim. Example: "This movie is the best ever made"
+- "true": strongly supported by scientific consensus or verified historical record
+- "false": directly contradicted by established evidence, clear myth or misinformation
+- "misleading": contains truth but missing critical context or leads to false conclusion
+- "insufficient evidence": plausible but lacks authoritative backing
+- "unverifiable": opinion, prediction, or not a falsifiable factual claim
 
-CONFIDENCE GUIDE (be calibrated, not generous):
-- 95-100: Scientific consensus, multiple authoritative sources agree completely
-- 85-94: Strong evidence, well-documented, minor uncertainty only
-- 70-84: Good evidence but some legitimate debate or missing data
-- 50-69: Mixed evidence, conflicting studies, or significant uncertainty
-- 30-49: Weak evidence, mostly anecdotal, or strongly contested
-- 10-29: Very little evidence, mostly speculation
-- Use the FULL range — do not default to 85-95 for everything
+CONFIDENCE (be calibrated):
+- 95-100: scientific consensus, all major sources agree
+- 85-94: strong evidence, well-documented
+- 70-84: good evidence but some debate
+- 50-69: mixed evidence or significant uncertainty
+- below 50: weak, anecdotal, or highly contested
 
-EXPLANATION QUALITY RULES:
-- Lead with the direct answer (true/false/etc) and why in one sentence
-- Cite specific numbers, dates, studies, or named organizations where possible
-- Do NOT use vague phrases like "experts say", "studies show", "it is believed"
-- If misleading, clearly explain what part is true AND what part is wrong
-- Keep it factual, not preachy
-- 3-4 sentences max, dense with information
+EXPLANATION RULES:
+- Lead with the direct verdict and reason
+- Cite specific numbers, dates, named organizations or studies
+- Never say "experts say" or "studies show" — name them
+- If misleading, explain what is true AND what is wrong
+- 3-4 sentences max
 '''
 
+    payload = json.dumps({
+        'model': ANTHROPIC_MODEL,
+        'max_tokens': 1024,
+        'messages': [{'role': 'user', 'content': prompt}]
+    }).encode('utf-8')
 
-    last_error = None
-    for model in MODELS:
-        for attempt in range(2):
-            try:
-                payload = json.dumps({
-                    'model': model,
-                    'messages': [{'role': 'user', 'content': prompt}],
-                    'temperature': 0.1,
-                    'max_tokens': 800
-                }).encode('utf-8')
+    req = urllib.request.Request(
+        ANTHROPIC_URL, data=payload,
+        headers={
+            'Content-Type': 'application/json',
+            'x-api-key': ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01'
+        }
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read())
+            raw = data['content'][0]['text']
+            clean = raw.replace('```json', '').replace('```', '').strip()
+            if not clean.startswith('{'):
+                m = re.search(r'\{[\s\S]*\}', clean)
+                clean = m.group(0) if m else clean
+            result = json.loads(clean)
+            result.setdefault('verdict', 'insufficient evidence')
+            result.setdefault('explanation', 'No explanation provided.')
+            result.setdefault('confidence', 50)
+            result.setdefault('category', 'general')
+            result.setdefault('sources', [])
+            result.setdefault('related_queries', [])
+            result['model_used'] = ANTHROPIC_MODEL
+            return result
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        raise RuntimeError(f'Anthropic API error {e.code}: {body[:300]}')
+    except (json.JSONDecodeError, KeyError) as e:
+        raise RuntimeError(f'Response parse error: {e}')
+    except Exception as e:
+        raise RuntimeError(f'Call failed: {type(e).__name__}: {e}')
 
-                req = urllib.request.Request(
-                    OPENROUTER_URL, data=payload,
-                    headers={
-                        'Content-Type': 'application/json',
-                        'Authorization': f'Bearer {OPENROUTER_API_KEY}',
-                        'HTTP-Referer': 'http://localhost:5050',
-                        'X-Title': 'VerifAI Fact Checker'
-                    }
-                )
-                with urllib.request.urlopen(req, timeout=30) as resp:
-                    data = json.loads(resp.read())
-                    if 'error' in data:
-                        raise RuntimeError(f"Model error: {data['error']}")
-                    raw = data['choices'][0]['message']['content']
-                    if not raw or not raw.strip():
-                        raise RuntimeError('Empty response')
-                    clean = raw.replace('```json', '').replace('```', '').strip()
-                    if not clean.startswith('{'):
-                        m = re.search(r'\{[\s\S]*\}', clean)
-                        clean = m.group(0) if m else clean
-                    result = json.loads(clean)
-                    result.setdefault('verdict', 'insufficient evidence')
-                    result.setdefault('explanation', 'No explanation provided.')
-                    result.setdefault('confidence', 50)
-                    result.setdefault('category', 'general')
-                    result.setdefault('sources', [])
-                    result.setdefault('related_queries', [])
-                    result['model_used'] = model
-                    return result
-
-            except urllib.error.HTTPError as e:
-                body = e.read().decode()
-                last_error = f'{model} HTTP {e.code}: {body[:200]}'
-                app.logger.warning(last_error)
-                if e.code in (429, 503, 529):
-                    time.sleep(1.5)
-                break
-            except (json.JSONDecodeError, KeyError) as e:
-                last_error = f'{model} parse error: {e}'
-                app.logger.warning(last_error)
-                break
-            except Exception as e:
-                last_error = f'{model}: {type(e).__name__}: {e}'
-                app.logger.warning(last_error)
-                if attempt == 0:
-                    time.sleep(1)
-
-    raise RuntimeError(f'All models failed. Last: {last_error}')
 
 # ── Database ───────────────────────────────────────────────────────────────────
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'facts.db')
